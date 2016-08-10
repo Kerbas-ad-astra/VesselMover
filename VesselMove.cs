@@ -12,18 +12,23 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+
+
 namespace VesselMover
 {
 	[KSPAddon(KSPAddon.Startup.Flight, false)]
 	public class VesselMove : MonoBehaviour
 	{
+		public static VesselMove instance;
+
+
 		public enum MoveModes{Normal = 0, Slow = 1, Ludicrous = 2}
 		MoveModes moveMode = MoveModes.Normal;
 
 		bool moving = false;
 		List<Vessel> placingVessels = new List<Vessel>();
 		//float hOffset = 0;
-		float moveHeight = 0;
+		public float moveHeight = 0;
 
 
 		float[] hoverHeights = new float[]{35, 15, 3000};
@@ -62,7 +67,8 @@ namespace VesselMover
 			}
 		}
 
-		Vessel movingVessel;
+		public bool isMovingVessel = false;
+		public Vessel movingVessel;
 		Quaternion startRotation;
 		Quaternion currRotation;
 
@@ -83,6 +89,14 @@ namespace VesselMover
 		bool hasRotated = false;
 		float timeBoundsUpdated = 0;
 
+		void Awake()
+		{
+			if(instance)
+			{
+				Destroy(instance);
+			}
+			instance = this;
+		}
 
 		void Start()
 		{
@@ -95,6 +109,7 @@ namespace VesselMover
 
 		void Update()
 		{
+			/*
 			if((Input.GetKey(KeyCode.LeftAlt) || (Input.GetKey(KeyCode.RightAlt))) && Input.GetKeyDown(KeyCode.P))
 			{
 				if(moving)
@@ -103,10 +118,10 @@ namespace VesselMover
 				}
 				else
 				{
-					StartMove();
+					StartMove(FlightGlobals.ActiveVessel, true);
 				}
 			}
-
+			*/
 			if(moving)
 			{
 				if(Input.GetKeyDown(KeyCode.Tab))
@@ -116,6 +131,13 @@ namespace VesselMover
 			}
 
 
+			/*
+			if(Input.GetKey(KeyCode.RightAlt) && Input.GetKeyDown(KeyCode.O))
+			{
+				Debug.Log("Starting spawn test");
+				VesselSpawn.instance.StartVesselSpawn();
+			}
+			*/
 		}
 
 		void FixedUpdate()
@@ -160,6 +182,10 @@ namespace VesselMover
 			else
 			{
 				forward = Vector3.ProjectOnPlane(movingVessel.CoM-FlightCamera.fetch.mainCamera.transform.position, up).normalized; 
+				if(Vector3.Dot(-up, FlightCamera.fetch.mainCamera.transform.up) > 0)
+				{
+					forward = Vector3.ProjectOnPlane(FlightCamera.fetch.mainCamera.transform.up, up).normalized;
+				}
 			}
 
 			Vector3 right = Vector3.Cross(up, forward);
@@ -222,6 +248,20 @@ namespace VesselMover
 				hasRotated = true;
 			}
 
+			//auto level plane
+			if(GameSettings.TRANSLATE_FWD.GetKey())
+			{
+				Quaternion targetRot = Quaternion.LookRotation(-up, forward);
+				startRotation = Quaternion.RotateTowards(startRotation, targetRot, rotationSpeed * 2);
+				hasRotated = true;
+			}
+			else if(GameSettings.TRANSLATE_BACK.GetKey())//auto level rocket
+			{
+				Quaternion targetRot = Quaternion.LookRotation(forward, up);
+				startRotation = Quaternion.RotateTowards(startRotation, targetRot, rotationSpeed * 2);
+				hasRotated = true;
+			}
+
 			if(inputting)
 			{
 				currMoveSpeed = Mathf.Clamp(Mathf.MoveTowards(currMoveSpeed, moveSpeed, moveAccel*Time.fixedDeltaTime), 0, moveSpeed);
@@ -240,6 +280,7 @@ namespace VesselMover
 			RaycastHit ringHit;
 			//bool surfaceDetected = RingCast(out ringHit, 8);
 			bool surfaceDetected = CapsuleCast(out ringHit);
+			Vector3 finalOffset = Vector3.zero;
 			if(surfaceDetected)
 			{
 				if(FlightGlobals.getAltitudeAtPos(ringHit.point)<0)
@@ -249,7 +290,7 @@ namespace VesselMover
 
 				Vector3 rOffset = Vector3.Project(ringHit.point-vSrfPt, up);
 				Vector3 mOffset = (vSrfPt + offset)-movingVessel.CoM;
-				Vector3 finalOffset = rOffset + mOffset + (moveHeight*up);
+				finalOffset = rOffset + mOffset + (moveHeight*up);
 				movingVessel.Translate(finalOffset);
 
 
@@ -321,14 +362,39 @@ namespace VesselMover
 			return new Vector3d(lat,longi,alt);
 		}
 
-		void StartMove()
+		public void StartMove(Vessel v, bool forceReleaseClamps)
 		{
-			if(!placingVessels.Contains(FlightGlobals.ActiveVessel) && FlightGlobals.ActiveVessel.LandedOrSplashed)
+			if(!v)
 			{
+				Debug.Log("Vessel mover tried to move a null vessel.");
+			}
+
+			if(v.packed)
+			{
+				return;
+			}
+
+			if(!placingVessels.Contains(v) && v.LandedOrSplashed)
+			{
+				//temp
+				foreach(var clamp in v.FindPartModulesImplementing<LaunchClamp>())
+				{
+					if(forceReleaseClamps)
+					{
+						clamp.Release();	
+					}
+					else
+					{
+						return;
+					}
+				}
+
 				ShowModeMessage();
 
-				movingVessel = FlightGlobals.ActiveVessel;
-				up = (movingVessel.transform.position-FlightGlobals.currentMainBody.transform.position).normalized;
+				movingVessel = v;
+				isMovingVessel = true;
+
+				up = (v.transform.position-v.mainBody.transform.position).normalized;
 				startingUp = up;
 
 				vBounds = new VesselBounds(movingVessel);
@@ -345,10 +411,10 @@ namespace VesselMover
 
 
 
-		void EndMove()
+		public void EndMove()
 		{
 			StartCoroutine(EndMoveRoutine(vBounds));
-
+			isMovingVessel = false;
 			debugLr.enabled = false;
 		}
 
@@ -374,10 +440,12 @@ namespace VesselMover
 
 			//float heightOffset = GetRadarAltitude(movingVessel) - moveHeight;
 
+			float altitude = GetRaycastAltitude(vesselBounds);
+
 			while(v && !v.LandedOrSplashed)
 			{
 				up = (v.transform.position-FlightGlobals.currentMainBody.transform.position).normalized;
-				float placeSpeed = Mathf.Clamp(((GetRaycastAltitude(vesselBounds)-bottomLength)*2), 0.1f, maxPlacementSpeed);
+				float placeSpeed = Mathf.Clamp(((altitude-bottomLength)*2), 0.1f, maxPlacementSpeed);
 				if(placeSpeed > 3)
 				{
 					v.SetWorldVelocity(Vector3.zero);
@@ -389,6 +457,7 @@ namespace VesselMover
 				{
 					v.SetWorldVelocity(placeSpeed * -up);
 				}
+				altitude -= placeSpeed*Time.fixedDeltaTime;
 				yield return new WaitForFixedUpdate();
 			}
 
@@ -417,7 +486,7 @@ namespace VesselMover
 
 			float angle = index * angleIncrement;
 
-			Vector3 forward = Vector3.ProjectOnPlane((movingVessel.CoM)-FlightCamera.fetch.mainCamera.transform.position, up).normalized;
+			Vector3 forward = North ();//Vector3.ProjectOnPlane((movingVessel.CoM)-FlightCamera.fetch.mainCamera.transform.position, up).normalized;
 
 			float radius = vBounds.radius;
 
@@ -446,10 +515,18 @@ namespace VesselMover
 		float GetRaycastAltitude(VesselBounds vesselBounds) //TODO do the raycast from the bottom point of the ship, and include vessels in layer mask, so you can safely place on top of vessel
 		{
 			RaycastHit hit;
+
+			//test
+			if(Physics.Raycast(vesselBounds.vessel.CoM - (vesselBounds.bottomLength*up), -up, out hit, (float)vesselBounds.vessel.altitude, (1<<15)|(1<<0)))
+			{
+				return Vector3.Project(hit.point-vesselBounds.vessel.CoM, up).magnitude;
+			}
+
+			/*
 			if(Physics.Raycast(vesselBounds.vessel.CoM, -up, out hit, (float)vesselBounds.vessel.altitude, (1<<15)))
 			{
 				return hit.distance;
-			}
+			}*/
 			else
 			{
 				return GetRadarAltitude(vesselBounds.vessel);
@@ -613,8 +690,8 @@ namespace VesselMover
 				}
 				*/
 				//radius *= 1.75f;
-				radius += 15;
-
+				//radius += 5;//15;
+				radius += Mathf.Clamp(radius, 2, 10);
 			}
 
 
