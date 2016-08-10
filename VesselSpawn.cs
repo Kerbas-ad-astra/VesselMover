@@ -367,64 +367,21 @@ namespace VesselMover
 				}
 
 				//add minimal crew
+				bool success = false;
+				Part part = shipConstruct.parts.Find(p => p.protoModuleCrew.Count < p.CrewCapacity);
+
+				// Add the crew member
+				if (part != null)
 				{
-					bool success = false;
-					Part part = shipConstruct.parts.Find(p => p.protoModuleCrew.Count < p.CrewCapacity);
+					// Create the ProtoCrewMember
+					ProtoCrewMember crewMember = HighLogic.CurrentGame.CrewRoster.GetNewKerbal(ProtoCrewMember.KerbalType.Crew);
+					crewMember.gender = UnityEngine.Random.Range(0,100) > 50 ? ProtoCrewMember.Gender.Female : ProtoCrewMember.Gender.Male;
+					//crewMember.trait = "Pilot";
 
-					// Add the crew member
-					if (part != null)
-					{
-						// Create the ProtoCrewMember
-						ProtoCrewMember crewMember = HighLogic.CurrentGame.CrewRoster.GetNewKerbal(ProtoCrewMember.KerbalType.Unowned);
-
-						crewMember.gender = UnityEngine.Random.Range(0,100) > 50 ? ProtoCrewMember.Gender.Female : ProtoCrewMember.Gender.Male;
-
-						
-						/*
-						if (cd.name != null)
-						{
-							crewMember.name = cd.name;
-						}
-						*/
-
-						// Add them to the part
-						success = part.AddCrewmemberAt(crewMember, part.protoModuleCrew.Count);
-					}
+					// Add them to the part
+					part.AddCrewmemberAt(crewMember, part.protoModuleCrew.Count);
 				}
 
-				/*
-				foreach (CrewData cd in vesselData.crew)
-				{
-					bool success = false;
-
-					// Find a seat for the crew
-					Part part = shipConstruct.parts.Find(p => p.protoModuleCrew.Count < p.CrewCapacity);
-
-					// Add the crew member
-					if (part != null)
-					{
-						// Create the ProtoCrewMember
-						ProtoCrewMember crewMember = HighLogic.CurrentGame.CrewRoster.GetNewKerbal(ProtoCrewMember.KerbalType.Unowned);
-						if (cd.gender != null)
-						{
-							crewMember.gender = cd.gender.Value;
-						}
-						if (cd.name != null)
-						{
-							crewMember.name = cd.name;
-						}
-
-						// Add them to the part
-						success = part.AddCrewmemberAt(crewMember, part.protoModuleCrew.Count);
-					}
-
-					if (!success)
-					{
-						Debug.Log("Unable to add crew to vessel named '" + vesselData.name + "'.  Perhaps there's no room?");
-						break;
-					}
-				}
-				*/
 				// Create a dummy ProtoVessel, we will use this to dump the parts to a config node.
 				// We can't use the config nodes from the .craft file, because they are in a
 				// slightly different format than those required for a ProtoVessel (seriously
@@ -450,7 +407,7 @@ namespace VesselMover
 				// Create the ship's parts
 
 				List<ConfigNode> partNodesL = new List<ConfigNode>();
-				foreach(var snapShot in dummyProto.protoPartSnapshots)
+				foreach(ProtoPartSnapshot snapShot in dummyProto.protoPartSnapshots)
 				{
 					ConfigNode node = new ConfigNode("PART");
 					snapShot.Save(node);
@@ -493,7 +450,7 @@ namespace VesselMover
 				foreach (CrewData cd in vesselData.crew)
 				{
 					// Create the ProtoCrewMember
-					ProtoCrewMember crewMember = HighLogic.CurrentGame.CrewRoster.GetNewKerbal(ProtoCrewMember.KerbalType.Unowned);
+					ProtoCrewMember crewMember = HighLogic.CurrentGame.CrewRoster.GetNewKerbal(ProtoCrewMember.KerbalType.Crew);
 					if (cd.name != null)
 					{
 						crewMember.name = cd.name;
@@ -614,7 +571,7 @@ namespace VesselMover
 					float hgt = (shipConstruct != null ? shipConstruct.parts[0] : vesselData.craftPart.partPrefab).localRoot.attPos0.y - lowest;
 					hgt += vesselData.height;
 
-					foreach(var p in shipConstruct.Parts)
+					foreach(Part p in shipConstruct.Parts)
 					{
 						LaunchClamp lc = p.FindModuleImplementing<LaunchClamp>();
 						if(lc)
@@ -661,7 +618,7 @@ namespace VesselMover
 
 
 			//destroy prefabs
-			foreach(var p in FindObjectsOfType<Part>())
+			foreach(Part p in FindObjectsOfType<Part>())
 			{
 				if(!p.vessel)
 				{
